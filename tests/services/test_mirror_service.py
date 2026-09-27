@@ -76,10 +76,11 @@ class TestMirrorService(unittest.IsolatedAsyncioTestCase):
     @patch("src.services.mirror_service.config")
     async def test_on_raw_message_delete_synchronizes_deletion(self, mock_config):
         mock_config.discord_channel_id = 12345
-        self.mock_db.delete_mapping = AsyncMock(return_value={
+        self.mock_db.get_mapping = AsyncMock(return_value={
             "telegram_chat_id": "-100123",
             "telegram_message_ids": [501, 502],
         })
+        self.mock_db.delete_mapping = AsyncMock(return_value=True)
         self.mock_tg.delete_channel_post = AsyncMock(return_value=True)
 
         payload = MagicMock(spec=RawMessageDeleteEvent)
@@ -88,11 +89,34 @@ class TestMirrorService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.process_message_delete(payload)
 
-        self.mock_db.delete_mapping.assert_awaited_once_with(88888)
         self.mock_tg.delete_channel_post.assert_awaited_once_with(
             chat_id="-100123",
             message_ids=[501, 502]
         )
+        self.mock_db.delete_mapping.assert_awaited_once_with(88888)
+
+    @patch("src.services.mirror_service.config")
+    async def test_on_raw_message_delete_failure_preserves_mapping(self, mock_config):
+        mock_config.discord_channel_id = 12345
+        self.mock_db.get_mapping = AsyncMock(return_value={
+            "telegram_chat_id": "-100123",
+            "telegram_message_ids": [501, 502],
+        })
+        self.mock_db.delete_mapping = AsyncMock()
+        self.mock_tg.delete_channel_post = AsyncMock(return_value=False)
+
+        payload = MagicMock(spec=RawMessageDeleteEvent)
+        payload.channel_id = 12345
+        payload.message_id = 88888
+
+        await self.service.process_message_delete(payload)
+
+        self.mock_tg.delete_channel_post.assert_awaited_once_with(
+            chat_id="-100123",
+            message_ids=[501, 502]
+        )
+        # Mapping must NOT be deleted from DB if Telegram deletion failed!
+        self.mock_db.delete_mapping.assert_not_called()
 
     @patch("src.services.mirror_service.config")
     async def test_on_raw_message_edit_synchronizes_edit(self, mock_config):
@@ -156,10 +180,11 @@ class TestMirrorService(unittest.IsolatedAsyncioTestCase):
     @patch("src.services.mirror_service.config")
     async def test_on_raw_bulk_message_delete(self, mock_config):
         mock_config.discord_channel_id = 12345
-        self.mock_db.delete_mappings_bulk = AsyncMock(return_value=[
-            {"telegram_chat_id": "-100123", "telegram_message_ids": [501]},
-            {"telegram_chat_id": "-100123", "telegram_message_ids": [502]},
-        ])
+        self.mock_db.get_mapping = AsyncMock(side_effect=lambda mid: {
+            "telegram_chat_id": "-100123",
+            "telegram_message_ids": [501 if mid == 88888 else 502],
+        })
+        self.mock_db.delete_mappings_bulk = AsyncMock()
         self.mock_tg.delete_channel_post = AsyncMock(return_value=True)
 
         payload = MagicMock(spec=RawBulkMessageDeleteEvent)
@@ -170,6 +195,44 @@ class TestMirrorService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_db.delete_mappings_bulk.assert_awaited_once_with([88888, 88889])
         self.assertEqual(self.mock_tg.delete_channel_post.await_count, 2)
+
+    @patch("src.services.mirror_service.config")
+    async def test_on_message_converts_attachments(self, mock_config):
+        from src.core.models import MediaAttachment
+        mock_config.discord_channel_id = 12345
+        mock_config.telegram_chat_id = "-100123"
+        mock_config.enable_message_headers = False
+        mock_config.show_author_header = False
+        mock_config.tz = None
+        mock_config.mirror_bot_messages = True
+
+        self.mock_tg.send_channel_post = AsyncMock(return_value=([501], True))
+        self.mock_db.save_mapping = AsyncMock()
+
+        mock_att = MagicMock()
+        mock_att.url = "https://example.com/test.png"
+        mock_att.filename = "test.png"
+        mock_att.content_type = "image/png"
+
+        msg = MagicMock(spec=discord.Message)
+        msg.id = 77777
+        msg.channel.id = 12345
+        msg.author.bot = False
+        msg.author.display_name = "Bob"
+        msg.content = "Look at this photo"
+        msg.embeds = []
+        msg.attachments = [mock_att]
+        msg.guild = None
+
+        await self.service.process_message(msg)
+
+        self.mock_tg.send_channel_post.assert_awaited_once()
+        passed_attachments = self.mock_tg.send_channel_post.await_args.kwargs["attachments"]
+        self.assertEqual(len(passed_attachments), 1)
+        self.assertIsInstance(passed_attachments[0], MediaAttachment)
+        self.assertEqual(passed_attachments[0].url, "https://example.com/test.png")
+        self.assertEqual(passed_attachments[0].filename, "test.png")
+        self.assertTrue(passed_attachments[0].is_image)
 
     def test_extract_animation_discord_cdn_link(self):
         msg = MagicMock(spec=discord.Message)
@@ -197,5 +260,41 @@ class TestMirrorService(unittest.IsolatedAsyncioTestCase):
         self.assertIn("og_leo.gif", anim_url)
         self.assertEqual(cleaned, "")
 
+    @patch("src.services.mirror_service.config")
+    async def test_on_message_partial_failure_saves_partial_mapping(self, mock_config):
+        mock_config.discord_channel_id = 12345
+        mock_config.telegram_chat_id = "-100123"
+        mock_config.enable_message_headers = False
+        mock_config.show_author_header = False
+        mock_config.tz = None
+        mock_config.mirror_bot_messages = True
+
+        partial_err = Exception("Text send failed")
+        setattr(partial_err, "partial_sent_msg_ids", [501, 502])
+        setattr(partial_err, "partial_has_media", True)
+        self.mock_tg.send_channel_post = AsyncMock(side_effect=partial_err)
+        self.mock_db.save_mapping = AsyncMock()
+
+        msg = MagicMock(spec=discord.Message)
+        msg.id = 99991
+        msg.channel.id = 12345
+        msg.author.bot = False
+        msg.author.display_name = "Alice"
+        msg.content = "Message with media"
+        msg.embeds = []
+        msg.attachments = []
+        msg.guild = None
+
+        await self.service.process_message(msg)
+
+        self.mock_db.save_mapping.assert_awaited_once_with(
+            discord_msg_id=99991,
+            telegram_chat_id="-100123",
+            telegram_msg_ids=[501, 502],
+            has_media=True
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -3,12 +3,12 @@ import logging
 import re
 from typing import Optional
 
-import aiohttp
 import discord
 from discord import RawMessageUpdateEvent, RawMessageDeleteEvent, RawBulkMessageDeleteEvent
 
 from src.core.config import config
 from src.core.database import Database
+from src.core.models import MediaAttachment
 from src.utils.telegram_builder import format_announcement
 
 logger = logging.getLogger("MirrorService")
@@ -90,23 +90,8 @@ class MirrorService:
         return None, content
 
     async def refresh_discord_url(self, url: str) -> str:
-        try:
-            api_url = "https://discord.com/api/v10/attachments/refresh-urls"
-            headers = {
-                "Authorization": f"Bot {config.discord_bot_token}",
-                "Content-Type": "application/json",
-                "User-Agent": "DiscordBot"
-            }
-            payload = {"attachment_urls": [url]}
-            async with aiohttp.ClientSession() as session:
-                async with session.post(api_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        refreshed_list = data.get("refreshed_urls", [])
-                        if refreshed_list and "refreshed" in refreshed_list[0]:
-                            return refreshed_list[0]["refreshed"]
-        except Exception as e:
-            logger.warning(f"Failed to refresh Discord attachment URL {url}: {e}")
+        if hasattr(self.discord_client, "refresh_attachment_url"):
+            return await self.discord_client.refresh_attachment_url(url)
         return url
 
     async def _prepare_announcement(self, message: discord.Message) -> tuple[str, Optional[str]]:
@@ -155,10 +140,20 @@ class MirrorService:
         try:
             formatted_text, anim_url = await self._prepare_announcement(message)
 
+            media_attachments = [
+                MediaAttachment(
+                    url=att.url,
+                    filename=att.filename,
+                    content_type=getattr(att, "content_type", None),
+                    is_animation=(att.filename or "").lower().endswith(".gif") or getattr(att, "content_type", None) == "image/gif"
+                )
+                for att in getattr(message, "attachments", [])
+            ]
+
             post_res = await self.telegram_client.send_channel_post(
                 chat_id=config.telegram_chat_id,
                 formatted_text=formatted_text,
-                attachments=message.attachments,
+                attachments=media_attachments,
                 animation_url=anim_url
             )
             sent_msg_ids, has_media = post_res[0], post_res[1]
@@ -176,6 +171,18 @@ class MirrorService:
             await self.db.save_mapping(**save_kwargs)
             logger.info(f"Mirrored message {message.id} to Telegram message(s): {sent_msg_ids}")
         except Exception as e:
+            partial_ids = getattr(e, "partial_sent_msg_ids", None)
+            if partial_ids:
+                try:
+                    await self.db.save_mapping(
+                        discord_msg_id=message.id,
+                        telegram_chat_id=config.telegram_chat_id,
+                        telegram_msg_ids=partial_ids,
+                        has_media=getattr(e, "partial_has_media", True)
+                    )
+                    logger.warning(f"Saved partial mapping for message {message.id} after text send error: {partial_ids}")
+                except Exception as save_err:
+                    logger.error(f"Failed to save partial mapping: {save_err}")
             logger.error(f"Failed to mirror message {message.id}: {e}", exc_info=True)
 
     async def process_message_edit(self, payload: RawMessageUpdateEvent):
@@ -190,7 +197,10 @@ class MirrorService:
 
         try:
             channel = self.discord_client.get_channel(payload.channel_id) or await self.discord_client.fetch_channel(payload.channel_id)
-            message = await channel.fetch_message(payload.message_id)
+            if not hasattr(channel, "fetch_message"):
+                logger.warning(f"Channel {payload.channel_id} is not messageable; cannot fetch message for edit.")
+                return
+            message = await channel.fetch_message(payload.message_id)  # type: ignore[union-attr]
 
             formatted_text, _ = await self._prepare_announcement(message)
 
@@ -231,17 +241,24 @@ class MirrorService:
         if payload.channel_id != config.discord_channel_id:
             return
 
-        mapping = await self.db.delete_mapping(payload.message_id)
+        mapping = await self.db.get_mapping(payload.message_id)
         if not mapping:
             return
 
         logger.info(f"Deletion detected for Discord ID: {payload.message_id}. Removing from Telegram...")
         try:
-            await self.telegram_client.delete_channel_post(
+            success = await self.telegram_client.delete_channel_post(
                 chat_id=mapping["telegram_chat_id"],
                 message_ids=mapping["telegram_message_ids"]
             )
-            logger.info(f"Deleted Telegram message(s) {mapping['telegram_message_ids']}")
+            if success:
+                await self.db.delete_mapping(payload.message_id)
+                logger.info(f"Deleted Telegram message(s) {mapping['telegram_message_ids']} and removed database mapping")
+            else:
+                logger.warning(
+                    f"Telegram deletion incomplete for Discord ID {payload.message_id}. "
+                    f"Preserving database mapping for future retry."
+                )
         except Exception as e:
             logger.error(f"Error deleting Telegram message for Discord ID {payload.message_id}: {e}", exc_info=True)
 
@@ -250,13 +267,23 @@ class MirrorService:
             return
 
         logger.info(f"Bulk deletion detected ({len(payload.message_ids)} messages)")
-        deleted_mappings = await self.db.delete_mappings_bulk(list(payload.message_ids))
-
-        for mapping in deleted_mappings:
+        successfully_deleted_ids = []
+        for msg_id in payload.message_ids:
+            mapping = await self.db.get_mapping(msg_id)
+            if not mapping:
+                continue
             try:
-                await self.telegram_client.delete_channel_post(
+                success = await self.telegram_client.delete_channel_post(
                     chat_id=mapping["telegram_chat_id"],
                     message_ids=mapping["telegram_message_ids"]
                 )
+                if success:
+                    successfully_deleted_ids.append(msg_id)
+                else:
+                    logger.warning(f"Failed to delete Telegram messages for Discord ID {msg_id}; preserving mapping.")
             except Exception as e:
-                logger.error(f"Error deleting bulk message mapping: {e}")
+                logger.error(f"Error deleting bulk message mapping for Discord ID {msg_id}: {e}")
+
+        if successfully_deleted_ids:
+            await self.db.delete_mappings_bulk(successfully_deleted_ids)
+            logger.info(f"Bulk deleted {len(successfully_deleted_ids)} mappings from database")
