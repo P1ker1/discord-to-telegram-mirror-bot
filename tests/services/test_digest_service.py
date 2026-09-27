@@ -4,7 +4,6 @@ from datetime import datetime, timezone, timedelta
 import discord
 
 from src.services.digest_service import DigestService
-from src.utils.telegram_builder import format_upcoming_events_telegram, format_upcoming_events_discord
 
 class TestDigestService(unittest.IsolatedAsyncioTestCase):
     async def test_fetch_upcoming_events_filtering(self):
