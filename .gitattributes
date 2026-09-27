@@ -1,0 +1,14 @@
+# Enforce LF line endings across all platforms and operating systems
+* text=auto eol=lf
+
+# Explicitly ensure text files always use LF
+*.py text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.example text eol=lf
+*.sh text eol=lf
+.gitignore text eol=lf
+.dockerignore text eol=lf
+Dockerfile text eol=lf

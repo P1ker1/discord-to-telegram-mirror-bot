@@ -1,0 +1,17 @@
+services:
+  announcement-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: discord-announcement-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist SQLite database across container restarts and image updates
+      - ./data:/app/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
