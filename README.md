@@ -234,19 +234,24 @@ discord-announcement-bot/
 ├── requirements.txt            # Python dependencies (discord.py, python-telegram-bot, aiosqlite)
 ├── LICENSE                     # MIT License
 ├── src/
-│   ├── discord_bot.py          # Discord Client: gateway listener, mention resolution, CDN URL refresh, GIF extraction
-│   ├── telegram_bot.py         # Telegram Service: pure Telegram API client for media, posts, in-place edits, and deletes
-│   ├── scheduler.py            # Background Scheduler: recurring tasks & 8h catch-up grace window
-│   ├── formatter.py            # Pure Transformer (5 sections): Discord Markdown, mentions, embeds, digest -> Telegram HTML
-│   ├── database.py             # SQLite Persistence: message correlation & metadata table (DELETE mode)
-│   └── config.py               # Typed configuration loader & validator
+│   ├── core/
+│   │   ├── config.py           # Typed configuration loader & validator
+│   │   └── database.py         # SQLite Persistence: message correlation & metadata table
+│   ├── utils/
+│   │   ├── text_utils.py       # Helper functions for markdown/HTML translation
+│   │   ├── discord_parser.py   # Discord content parsing and extraction
+│   │   └── telegram_builder.py # Telegram announcement formatting
+│   ├── services/
+│   │   ├── mirror_service.py   # Business logic for syncing messages, edits, and deletions
+│   │   └── digest_service.py   # Background Scheduler: recurring tasks & 8h catch-up grace window
+│   └── clients/
+│       ├── discord_client.py   # Discord API client and Gateway listener
+│       └── telegram_client.py  # Telegram API client for media and post management
 └── tests/
-    ├── test_config.py          # Environment parsing, fallback & validation tests (6 tests)
-    ├── test_database.py        # Mapping CRUD, bulk deletion & metadata tests (4 tests)
-    ├── test_discord_bot.py     # Gateway filtering, animation extraction & delete sync (9 tests)
-    ├── test_formatter.py       # Tag sanitization, mention resolution & markdown tests (16 tests)
-    ├── test_scheduler.py       # Event filtering, destination routing & grace window tests (3 tests)
-    └── test_telegram_bot.py    # Media detection, animation sending & edit operations (11 tests)
+    ├── core/                   # Unit tests for core configuration and database
+    ├── utils/                  # Unit tests for formatting and parsing utilities
+    ├── services/               # Unit tests for business logic and scheduling
+    └── clients/                # Unit tests for Discord and Telegram clients
 ```
 
 ---
@@ -265,29 +270,33 @@ flowchart LR
 
     %% Column 2: Core Processing & Translation
     subgraph S2["2. Core Processing"]
-        DBOT["discord_bot.py<br/><b>Gateway Listener</b>"]
-        SCHED["scheduler.py<br/><b>Task Scheduler</b>"]
-        FMT["formatter.py<br/><b>Markdown &rarr; HTML</b>"]
+        DBOT["discord_client.py<br/><b>Gateway Listener</b>"]
+        MSERVICE["mirror_service.py<br/><b>Sync Business Logic</b>"]
+        DSERVICE["digest_service.py<br/><b>Task Scheduler</b>"]
+        UTILS["utils/<br/><b>Text & Formatting</b>"]
     end
 
     %% Column 3: Destination & State
     subgraph S3["3. Destination & State"]
-        TGBOT["telegram_bot.py<br/><b>Media & Text Dispatcher</b>"]
+        TGBOT["telegram_client.py<br/><b>Media & Text Dispatcher</b>"]
         TG_CH["Telegram Channel<br/><i>(Mirrored Post)</i>"]
         DB[("database.py<br/><b>SQLite bot.db</b>")]
     end
 
     %% Real-Time Announcement Flow
     D_MSG --> DBOT
-    DBOT -->|"Raw text & embeds"| FMT
-    FMT -->|"Clean HTML & media"| TGBOT
-    TGBOT -->|"Publish / Edit / Delete"| TG_CH
-    DBOT -->|"Save / Delete ID mapping"| DB
+    DBOT -->|"Forward event"| MSERVICE
+    MSERVICE -->|"Raw text & embeds"| UTILS
+    UTILS -->|"Clean HTML"| MSERVICE
+    MSERVICE -->|"Publish / Edit / Delete"| TGBOT
+    TGBOT --> TG_CH
+    MSERVICE -->|"Save / Delete mapping"| DB
 
     %% Scheduled Events Flow
-    D_CAL --> SCHED
-    SCHED -->|"Format digest"| FMT
-    SCHED -->|"Persist handled week"| DB
+    D_CAL --> DSERVICE
+    DSERVICE -->|"Format digest"| UTILS
+    DSERVICE -->|"Persist handled week"| DB
+    DSERVICE -->|"Publish"| TGBOT
 ```
 
 ---
@@ -315,22 +324,22 @@ A key architectural advantage of this bot is the alignment between Discord and T
 
 | Feature / Goal | Where to go | What to do |
 | :--- | :--- | :--- |
-| **Change how text or emojis look on Telegram** | `src/formatter.py` | Add or update tag replacement rules and mention resolvers. |
-| **Change the Weekly Events digest layout** | `src/formatter.py` | Customize `format_upcoming_events_telegram` or `format_upcoming_events_discord`. |
-| **Listen to a new Discord event** | `src/discord_bot.py` | Add a Gateway listener (e.g. `on_reaction_add` or `on_thread_create`). |
-| **Add a new scheduled recurring job** | `src/scheduler.py` | Add a new `@tasks.loop` method and manage its lifecycle in `start()` and `stop()`. |
-| **Support new Telegram API features** | `src/telegram_bot.py` | Add methods using `python-telegram-bot` (e.g. pinning, forum topics, polls). |
-| **Add a new configuration setting** | `src/config.py` & `.env.example` | Add a typed attribute to `Config` and document it in `.env.example`. |
-| **Store new state or database tables** | `src/database.py` | Add SQLite tables in `init_db()` and expose async helper methods. |
-| **Add unit tests for your changes** | `tests/` | Mirror test naming: `test_formatter.py`, `test_database.py`, or `test_scheduler.py`. |
+| **Change how text or emojis look on Telegram** | `src/utils/` | Add or update tag replacement rules in `text_utils.py` and formatting in `telegram_builder.py`. |
+| **Change the Weekly Events digest layout** | `src/utils/telegram_builder.py` | Customize `format_upcoming_events_telegram` or `format_upcoming_events_discord`. |
+| **Listen to a new Discord event** | `src/clients/discord_client.py` | Add a Gateway listener (e.g. `on_reaction_add` or `on_thread_create`). |
+| **Add a new scheduled recurring job** | `src/services/digest_service.py` | Add a new `@tasks.loop` method and manage its lifecycle in `start()` and `stop()`. |
+| **Support new Telegram API features** | `src/clients/telegram_client.py` | Add methods using `python-telegram-bot` (e.g. pinning, forum topics, polls). |
+| **Add a new configuration setting** | `src/core/config.py` & `.env.example` | Add a typed attribute to `Config` and document it in `.env.example`. |
+| **Store new state or database tables** | `src/core/database.py` | Add SQLite tables in `init_db()` and expose async helper methods. |
+| **Add unit tests for your changes** | `tests/` | Add tests to the corresponding layer folder (`core`, `utils`, `services`, or `clients`). |
 
 ---
 
 ### Core Design Rules
 
-1. **Formatters must stay pure**: Functions in `src/formatter.py` should only transform inputs into strings. Never make network requests (`aiohttp`, Discord API, Telegram API) or database queries inside the formatter.
+1. **Formatters must stay pure**: Functions in `src/utils/` should only transform inputs into strings. Never make network requests (`aiohttp`, Discord API, Telegram API) or database queries inside the utilities.
 2. **Handle Telegram fallback gracefully**: Telegram's HTML parser is strict. Wrap external API operations in try-catch blocks with safe plain-text fallback (`re_strip_tags`).
-3. **Use raw gateway events**: Always listen to `on_raw_message_edit` and `on_raw_message_delete` in `src/discord_bot.py` rather than cached events so that edits/deletions work even after the bot restarts.
+3. **Use raw gateway events**: Always listen to `on_raw_message_edit` and `on_raw_message_delete` in `src/clients/discord_client.py` rather than cached events so that edits/deletions work even after the bot restarts.
 4. **Maintain test signal**: Keep tests high-value and focused on contracts and regression prevention (avoiding heavy mock boilerplate for trivial assignments).
 
 ---
