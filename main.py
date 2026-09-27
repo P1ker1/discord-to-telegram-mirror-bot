@@ -4,7 +4,11 @@ import signal
 import sys
 
 from src.core.config import config
-from src.discord_bot import MirrorBot
+from src.core.database import db
+from src.clients.discord_client import DiscordClient
+from src.clients.telegram_client import TelegramClient
+from src.services.mirror_service import MirrorService
+from src.scheduler import scheduler
 
 # Setup logging
 logging.basicConfig(
@@ -21,18 +25,23 @@ def main():
     # Validate environment variables before connecting
     config.validate(exit_on_error=True)
 
-    bot = MirrorBot()
+    telegram_client = TelegramClient(config.telegram_bot_token)
+    discord_client = DiscordClient()
+    mirror_service = MirrorService(discord_client, telegram_client, db)
+    
+    discord_client.set_mirror_service(mirror_service)
+    scheduler.set_telegram_client(telegram_client)
 
     def handle_shutdown(signum, frame):
         logger.info("Shutdown signal received. Shutting down gracefully...")
-        if bot.is_closed():
+        if discord_client.is_closed():
             return
         try:
-            loop = bot.loop
+            loop = discord_client.loop
             if loop and loop.is_running():
-                loop.create_task(bot.close())
+                loop.create_task(discord_client.close())
             else:
-                asyncio.create_task(bot.close())
+                asyncio.create_task(discord_client.close())
         except Exception as e:
             logger.warning(f"Error scheduling bot shutdown: {e}")
 
@@ -42,7 +51,7 @@ def main():
 
     logger.info("Starting Discord to Telegram Announcement Bot...")
     try:
-        bot.run(config.discord_bot_token, log_handler=None)
+        discord_client.run(config.discord_bot_token, log_handler=None)
     except KeyboardInterrupt:
         logger.info("Bot stopped by user.")
     except Exception as e:

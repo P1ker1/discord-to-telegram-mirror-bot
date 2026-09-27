@@ -12,18 +12,22 @@ from src.utils.telegram_builder import (
     format_upcoming_events_telegram,
     format_upcoming_events_discord
 )
-from src.telegram_bot import telegram_bot
+
 
 logger = logging.getLogger(__name__)
 
 class Scheduler:
     """Centralized background task scheduler for recurring jobs."""
 
-    def __init__(self, bot: Optional[discord.Client] = None):
+    def __init__(self, bot: Optional[discord.Client] = None, telegram_client=None):
         self.bot = bot
+        self.telegram_client = telegram_client
 
     def set_bot(self, bot: discord.Client):
         self.bot = bot
+
+    def set_telegram_client(self, telegram_client):
+        self.telegram_client = telegram_client
 
     async def fetch_upcoming_events(self, guild: discord.Guild, days: int = 7) -> list[discord.ScheduledEvent]:
         """Fetch scheduled events for the club within the given number of days."""
@@ -75,7 +79,7 @@ class Scheduler:
         try:
             header = config.events_header if config.enable_message_headers else None
             tg_text = format_upcoming_events_telegram(upcoming, header=header, tz=config.tz)
-            tg_sent_ids, _ = await telegram_bot.send_channel_post(
+            tg_sent_ids, _ = await self.telegram_client.send_channel_post(
                 chat_id=config.telegram_chat_id,
                 formatted_text=tg_text,
                 attachments=[],

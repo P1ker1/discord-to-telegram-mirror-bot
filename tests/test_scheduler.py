@@ -57,22 +57,25 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
         mock_bot.get_channel = MagicMock(return_value=mock_channel)
         service.set_bot(mock_bot)
 
+        mock_tg_client = MagicMock()
+        mock_tg_client.send_channel_post = AsyncMock()
+        service.set_telegram_client(mock_tg_client)
+
         # 1. Test Telegram-only mode (default: post_events_to_discord=False)
-        with patch.object(config, "post_events_to_discord", False), \
-             patch("src.scheduler.telegram_bot.send_channel_post", new_callable=AsyncMock) as mock_tg_send:
-            mock_tg_send.return_value = ([999], False)
+        with patch.object(config, "post_events_to_discord", False):
+            mock_tg_client.send_channel_post.return_value = ([999], False)
             await service.post_weekly_events_digest()
 
             mock_channel.send.assert_not_called()
-            mock_tg_send.assert_called_once()
+            mock_tg_client.send_channel_post.assert_called_once()
 
         mock_channel.send.reset_mock()
+        mock_tg_client.send_channel_post.reset_mock()
 
         # 2. Test both Discord and Telegram enabled (post_events_to_discord=True)
         with patch.object(config, "post_events_to_discord", True), \
-             patch("src.scheduler.telegram_bot.send_channel_post", new_callable=AsyncMock) as mock_tg_send, \
              patch("src.scheduler.db.save_mapping", new_callable=AsyncMock) as mock_save_mapping:
-            mock_tg_send.return_value = ([999], False)
+            mock_tg_client.send_channel_post.return_value = ([999], False)
             mock_sent_discord = MagicMock()
             mock_sent_discord.id = 12345
             mock_channel.send.return_value = mock_sent_discord
@@ -80,7 +83,7 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
             await service.post_weekly_events_digest()
 
             mock_channel.send.assert_called_once()
-            mock_tg_send.assert_called_once()
+            mock_tg_client.send_channel_post.assert_called_once()
             mock_save_mapping.assert_awaited_once_with(
                 discord_msg_id=12345,
                 telegram_chat_id=config.telegram_chat_id,

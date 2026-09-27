@@ -52,7 +52,7 @@ class EditPostResult:
     def __bool__(self) -> bool:
         return self.success
 
-class TelegramBot:
+class TelegramClient:
     def __init__(self, token: Optional[str] = None):
         self.token = token or config.telegram_bot_token
         self._bot: Optional[Bot] = None
@@ -367,4 +367,4 @@ class TelegramBot:
 
         return success
 
-telegram_bot = TelegramBot()
+telegram_bot = TelegramClient()

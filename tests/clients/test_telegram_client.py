@@ -3,14 +3,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.error import BadRequest
 from telegram.constants import ParseMode
 
-from src.telegram_bot import TelegramBot, re_strip_tags
+from src.clients.telegram_client import TelegramClient, re_strip_tags
 
 
-class TestTelegramBot(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for TelegramBot client helpers, media detection, and post operations."""
+class TestTelegramClient(unittest.IsolatedAsyncioTestCase):
+    """Unit tests for TelegramClient client helpers, media detection, and post operations."""
 
     def setUp(self):
-        self.bot_wrapper = TelegramBot(token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
+        self.bot_wrapper = TelegramClient(token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
         self.mock_bot = AsyncMock()
         self.bot_wrapper._bot = self.mock_bot
 
