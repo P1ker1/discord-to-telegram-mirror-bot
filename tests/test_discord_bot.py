@@ -103,6 +103,89 @@ class TestDiscordBot(unittest.IsolatedAsyncioTestCase):
             message_ids=[501, 502]
         )
 
+    @patch("src.discord_bot.config")
+    @patch("src.discord_bot.telegram_bot")
+    @patch("src.discord_bot.db")
+    async def test_on_raw_message_edit_synchronizes_edit(self, mock_db, mock_tg, mock_config):
+        mock_config.discord_channel_id = 12345
+        mock_config.announcement_header = "-- Announcement --"
+        mock_config.enable_message_headers = True
+        mock_config.show_author_header = False
+        mock_config.tz = None
+
+        mock_db.get_mapping = AsyncMock(return_value={
+            "telegram_chat_id": "-100123",
+            "telegram_message_ids": [501],
+            "has_media": False
+        })
+        mock_tg.edit_channel_post = AsyncMock(return_value=True)
+
+        mock_channel = MagicMock()
+        mock_msg = MagicMock(spec=discord.Message)
+        mock_msg.content = "Updated announcement content"
+        mock_msg.embeds = []
+        mock_msg.guild = None
+        mock_msg.author.display_name = "Alice"
+        mock_channel.fetch_message = AsyncMock(return_value=mock_msg)
+        self.bot.get_channel = MagicMock(return_value=mock_channel)
+
+        payload = MagicMock(spec=RawMessageUpdateEvent)
+        payload.channel_id = 12345
+        payload.message_id = 88888
+
+        await self.bot.on_raw_message_edit(payload)
+
+        mock_db.get_mapping.assert_awaited_once_with(88888)
+        mock_channel.fetch_message.assert_awaited_once_with(88888)
+        mock_tg.edit_channel_post.assert_awaited_once_with(
+            chat_id="-100123",
+            message_ids=[501],
+            formatted_text="<b>-- Announcement --</b>\n\nUpdated announcement content",
+            has_media=False
+        )
+
+    @patch("src.discord_bot.config")
+    @patch("src.discord_bot.telegram_bot")
+    @patch("src.discord_bot.db")
+    async def test_on_raw_message_edit_handles_not_found(self, mock_db, mock_tg, mock_config):
+        mock_config.discord_channel_id = 12345
+        mock_db.get_mapping = AsyncMock(return_value={
+            "telegram_chat_id": "-100123",
+            "telegram_message_ids": [501],
+            "has_media": False
+        })
+
+        mock_channel = MagicMock()
+        mock_channel.fetch_message = AsyncMock(side_effect=discord.NotFound(MagicMock(), "Not found"))
+        self.bot.get_channel = MagicMock(return_value=mock_channel)
+
+        payload = MagicMock(spec=RawMessageUpdateEvent)
+        payload.channel_id = 12345
+        payload.message_id = 88888
+
+        await self.bot.on_raw_message_edit(payload)
+        mock_tg.edit_channel_post.assert_not_called()
+
+    @patch("src.discord_bot.config")
+    @patch("src.discord_bot.telegram_bot")
+    @patch("src.discord_bot.db")
+    async def test_on_raw_bulk_message_delete(self, mock_db, mock_tg, mock_config):
+        mock_config.discord_channel_id = 12345
+        mock_db.delete_mappings_bulk = AsyncMock(return_value=[
+            {"telegram_chat_id": "-100123", "telegram_message_ids": [501]},
+            {"telegram_chat_id": "-100123", "telegram_message_ids": [502]},
+        ])
+        mock_tg.delete_channel_post = AsyncMock(return_value=True)
+
+        payload = MagicMock(spec=RawBulkMessageDeleteEvent)
+        payload.channel_id = 12345
+        payload.message_ids = [88888, 88889]
+
+        await self.bot.on_raw_bulk_message_delete(payload)
+
+        mock_db.delete_mappings_bulk.assert_awaited_once_with([88888, 88889])
+        self.assertEqual(mock_tg.delete_channel_post.await_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

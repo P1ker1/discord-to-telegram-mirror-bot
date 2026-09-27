@@ -70,7 +70,8 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
 
         # 2. Test both Discord and Telegram enabled (post_events_to_discord=True)
         with patch.object(config, "post_events_to_discord", True), \
-             patch("src.scheduler.telegram_bot.send_channel_post", new_callable=AsyncMock) as mock_tg_send:
+             patch("src.scheduler.telegram_bot.send_channel_post", new_callable=AsyncMock) as mock_tg_send, \
+             patch("src.scheduler.db.save_mapping", new_callable=AsyncMock) as mock_save_mapping:
             mock_tg_send.return_value = ([999], False)
             mock_sent_discord = MagicMock()
             mock_sent_discord.id = 12345
@@ -80,6 +81,12 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
 
             mock_channel.send.assert_called_once()
             mock_tg_send.assert_called_once()
+            mock_save_mapping.assert_awaited_once_with(
+                discord_msg_id=12345,
+                telegram_chat_id=config.telegram_chat_id,
+                telegram_msg_ids=[999],
+                has_media=False,
+            )
 
     async def test_weekly_scheduler_grace_window(self):
         """Tests on-schedule dispatch, skip-when-handled, and expired grace window handling."""

@@ -3,7 +3,8 @@ from src.formatter import (
     escape_html,
     discord_markdown_to_telegram_html,
     resolve_mentions,
-    format_announcement
+    format_announcement,
+    format_embed
 )
 
 class TestFormatter(unittest.TestCase):
@@ -136,6 +137,57 @@ class TestFormatter(unittest.TestCase):
         # Ensure that every opening <b> tag has a matching closing </b> tag
         self.assertEqual(announcement.count("<b>"), announcement.count("</b>"))
         self.assertEqual(announcement.count("<i>"), announcement.count("</i>"))
+
+    def test_resolve_mentions_with_guild(self):
+        from unittest.mock import MagicMock
+
+        guild = MagicMock()
+        member = MagicMock(display_name="Alice")
+        role = MagicMock()
+        role.name = "Moderator"
+        channel = MagicMock()
+        channel.name = "announcements"
+
+        guild.get_member.side_effect = lambda uid: member if uid == 123 else None
+        guild.get_role.side_effect = lambda rid: role if rid == 456 else None
+        guild.get_channel.side_effect = lambda cid: channel if cid == 789 else None
+
+        text = "Hey <@123>, please post in <#789> (ask <@&456>)"
+        resolved = resolve_mentions(text, guild=guild)
+        self.assertEqual(resolved, "Hey @Alice, please post in #announcements (ask @Moderator)")
+
+    def test_format_embed(self):
+        from unittest.mock import MagicMock
+
+        embed = MagicMock()
+        embed.author.name = "Announcement Bot"
+        embed.title = "Important Update"
+        embed.url = "https://example.com"
+        embed.description = "Here is some **bold description**"
+
+        field = MagicMock()
+        field.name = "Status"
+        field.value = "Active"
+        embed.fields = [field]
+        embed.footer.text = "Page 1 of 1"
+
+        result = format_embed(embed)
+        self.assertIn("<b>Announcement Bot</b>", result)
+        self.assertIn('<a href="https://example.com">Important Update</a>', result)
+        self.assertIn("<b>bold description</b>", result)
+        self.assertIn("<b>Status</b>\nActive", result)
+        self.assertIn("<i>Page 1 of 1</i>", result)
+
+    def test_format_announcement_skips_link_preview_embed(self):
+        from unittest.mock import MagicMock
+
+        embed = MagicMock()
+        embed.type = "link"
+        embed.title = "Discord Preview Card"
+
+        result = format_announcement("Content with link", embeds=[embed])
+        self.assertNotIn("Discord Preview Card", result)
+
 
 if __name__ == "__main__":
     unittest.main()

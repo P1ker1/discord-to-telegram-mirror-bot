@@ -1,19 +1,20 @@
 import asyncio
 import os
+import tempfile
 import unittest
+from pathlib import Path
+
 from src.database import Database
 
 class TestDatabase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.test_db_path = "data/test_bot.db"
-        if os.path.exists(self.test_db_path):
-            os.remove(self.test_db_path)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_db_path = str(Path(self.temp_dir.name) / "test_bot.db")
         self.db = Database(db_path=self.test_db_path)
         await self.db.init_db()
 
     async def asyncTearDown(self):
-        if os.path.exists(self.test_db_path):
-            os.remove(self.test_db_path)
+        self.temp_dir.cleanup()
 
     async def test_save_and_get_mapping(self):
         discord_id = 9876543210
