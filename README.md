@@ -58,9 +58,9 @@ When you post in the monitored `#announcements` channel, the bot handles synchro
    - *(For a complete test message covering every edge case, see [examples/sample_announcements.md](examples/sample_announcements.md))*
 2. **Media & Albums**:
    - Single images, videos, and generic documents (PDFs, ZIPs, files) are uploaded directly to Telegram.
-   - Animated GIFs (`.gif`) are automatically sent as native Telegram animations (`send_animation`), ensuring they loop and autoplay seamlessly.
+   - **GIFs & Animations**: Uploaded `.gif` files, Tenor/Giphy picker links, and Discord Saved/Favorite GIFs are automatically detected, refreshed with signed Discord CDN URLs if needed, and dispatched as native Telegram animations (`send_animation`), ensuring they loop and autoplay seamlessly. The raw GIF link is cleaned from the text message so it isn't displayed twice.
    - Multiple images and videos in a single Discord post are grouped into a native Telegram media album.
-   - For posts with media, the bot uses a **Media-First** layout: the media is displayed at the top, and the announcement text appears immediately below as a message post.
+   - For posts with media, the bot uses a **Media-First** layout: media is sent first without captions, and the announcement text appears immediately below as its own post with access to Telegram's full 4,096-character limit.
    - **Mixed Attachment Note**: Telegram's API allows grouping photos and videos together into an album, but **disallows mixing photos/videos with documents** (e.g. 1 image + 1 PDF) in a single album. Avoid attaching mixed media categories to the same Discord post if you want attachments visually grouped.
 3. **Editing Posts**:
    - If you notice a typo and edit your announcement in Discord, the bot automatically edits the mirrored Telegram message. You do not need to delete and repost.
@@ -211,7 +211,7 @@ Copy `.env.example` to `.env` and configure the settings:
 ### Automated Testing (Continuous Integration)
 
 The repository includes an automated testing workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) that runs on every push and pull request:
-- **Unit Tests**: Executes the complete 35-test suite across all modules on Python 3.12.
+- **Unit Tests**: Executes the complete 49-test suite across all modules on Python 3.12.
 - **Docker Build Check**: Verifies that the container image builds cleanly without errors.
 - **Zero Secrets Required**: Runs entirely on standard GitHub Actions runners with no external infrastructure or secrets needed.
 
@@ -234,19 +234,19 @@ discord-announcement-bot/
 ├── requirements.txt            # Python dependencies (discord.py, python-telegram-bot, aiosqlite)
 ├── LICENSE                     # MIT License
 ├── src/
-│   ├── discord_bot.py          # Discord Client: listens for message, edit, and deletion Gateway events
-│   ├── telegram_bot.py         # Telegram Service: handles media albums, sending, editing, and fallbacks
+│   ├── discord_bot.py          # Discord Client: gateway listener, mention resolution, CDN URL refresh, GIF extraction
+│   ├── telegram_bot.py         # Telegram Service: pure Telegram API client for media, posts, in-place edits, and deletes
 │   ├── scheduler.py            # Background Scheduler: recurring tasks & 8h catch-up grace window
-│   ├── formatter.py            # Pure Transformer: Discord Markdown & Embeds -> Telegram HTML
+│   ├── formatter.py            # Pure Transformer (5 sections): Discord Markdown, mentions, embeds, digest -> Telegram HTML
 │   ├── database.py             # SQLite Persistence: message correlation & metadata table (DELETE mode)
 │   └── config.py               # Typed configuration loader & validator
 └── tests/
     ├── test_config.py          # Environment parsing, fallback & validation tests (6 tests)
     ├── test_database.py        # Mapping CRUD, bulk deletion & metadata tests (4 tests)
-    ├── test_formatter.py       # Tag sanitization, mention resolution & markdown tests (11 tests)
-    ├── test_telegram_bot.py    # Media detection, caption truncation & bot operations (7 tests)
-    ├── test_discord_bot.py     # Gateway filtering, message mirroring & delete sync (4 tests)
-    └── test_scheduler.py       # Event filtering, destination routing & grace window tests (3 tests)
+    ├── test_discord_bot.py     # Gateway filtering, animation extraction & delete sync (9 tests)
+    ├── test_formatter.py       # Tag sanitization, mention resolution & markdown tests (16 tests)
+    ├── test_scheduler.py       # Event filtering, destination routing & grace window tests (3 tests)
+    └── test_telegram_bot.py    # Media detection, animation sending & edit operations (11 tests)
 ```
 
 ---
@@ -304,10 +304,10 @@ A key architectural advantage of this bot is the alignment between Discord and T
 | **Telegram (Standard Message)** | 4,096 characters | Holds any full Discord announcement in a single message. |
 
 #### Why the "Media-First, Text-Second" Strategy Keeps Things Clean:
-- **No 1,024-character caption bottlenecks**: In Telegram, photo and album captions are strictly capped at 1,024 characters. Storing announcement text inside a media caption causes announcements longer than ~1,000 characters to truncate or fail.
+- **No 1,024-character caption bottlenecks**: In Telegram, photo and album captions are strictly capped at 1,024 characters. Storing announcement text inside a media caption causes announcements longer than ~1,000 characters to truncate or fail. By sending media cleanly first without captions and posting announcement text immediately below, every post enjoys access to Telegram's full 4,096-character limit.
 - **Perfect 1:1 Discord-to-Telegram Fit**: Because Telegram's standard text message limit is **4,096 characters**, every possible single Discord post—even a maximum-length **Discord Nitro post of 4,000 characters**—fits cleanly into one Telegram text message without needing complex multi-part message chunking.
 - **Predictable In-Place Edits**: When an announcement with media is edited on Discord, the accompanying Telegram text message is edited directly via `edit_message_text`. This eliminates caption size violations and prevents visual jumping or caption truncation.
-- **Attachment Routing & Album Rules**: Photos (`.png`, `.jpg`, `.webp`) use `send_photo`, videos (`.mp4`, `.mov`, `.webm`) use `send_video`, animated GIFs (`.gif`) use `send_animation` to maintain auto-looping, and arbitrary files (PDFs, archives, etc.) use `send_document`. Note that Telegram's Bot API allows albums (`send_media_group`) to mix photos and videos, but disallows mixing documents with photos/videos in a single album.
+- **Attachment Routing & GIF Handling**: Photos (`.png`, `.jpg`, `.webp`) use `send_photo`, videos (`.mp4`, `.mov`, `.webm`) use `send_video`, animated GIFs (`.gif`, Tenor, Giphy, and Discord Favorites) use `send_animation` to maintain auto-looping, and arbitrary files (PDFs, archives, etc.) use `send_document`. Unsigned Discord CDN attachment URLs are refreshed before download. Note that Telegram's Bot API allows albums (`send_media_group`) to mix photos and videos, but disallows mixing documents with photos/videos in a single album.
 
 ---
 

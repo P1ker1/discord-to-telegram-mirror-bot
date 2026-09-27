@@ -1,11 +1,11 @@
 import unittest
-from src.formatter import (
-    escape_html,
+from src.utils.text_utils import escape_html
+from src.utils.telegram_builder import (
     discord_markdown_to_telegram_html,
-    resolve_mentions,
     format_announcement,
     format_embed
 )
+from src.utils.discord_parser import resolve_mentions
 
 class TestFormatter(unittest.TestCase):
     def test_escape_html(self):
@@ -103,7 +103,7 @@ class TestFormatter(unittest.TestCase):
     def test_upcoming_events_formatting(self):
         from unittest.mock import MagicMock
         from datetime import datetime, timezone
-        from src.formatter import format_upcoming_events_telegram, format_upcoming_events_discord
+        from src.utils.telegram_builder import format_upcoming_events_telegram, format_upcoming_events_discord
 
         mock_event = MagicMock()
         mock_event.name = "Weekly Game Night"

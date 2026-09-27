@@ -10,7 +10,7 @@ from discord import RawMessageUpdateEvent, RawMessageDeleteEvent, RawBulkMessage
 
 from src.core.config import config
 from src.core.database import db
-from src.formatter import format_announcement
+from src.utils.telegram_builder import format_announcement
 from src.scheduler import scheduler
 from src.telegram_bot import telegram_bot
 

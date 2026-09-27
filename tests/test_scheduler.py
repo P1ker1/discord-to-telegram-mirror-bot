@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 import discord
 
 from src.scheduler import Scheduler
-from src.formatter import format_upcoming_events_telegram, format_upcoming_events_discord
+from src.utils.telegram_builder import format_upcoming_events_telegram, format_upcoming_events_discord
 
 class TestScheduler(unittest.IsolatedAsyncioTestCase):
     async def test_fetch_upcoming_events_filtering(self):
