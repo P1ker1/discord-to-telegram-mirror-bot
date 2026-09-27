@@ -34,12 +34,17 @@ class TestFormatter(unittest.TestCase):
         result = discord_markdown_to_telegram_html("Run `git status` command")
         self.assertEqual(result, "Run <code>git status</code> command")
 
-        # Code block should preserve content and not parse markdown inside it
+        # Code block with language
         code_input = "```python\ndef foo():\n    return **not_bold**\n```"
         formatted = discord_markdown_to_telegram_html(code_input)
-        self.assertIn("<pre><code>", formatted)
+        self.assertIn('<pre><code class="language-python">', formatted)
         self.assertIn("return **not_bold**", formatted)
         self.assertNotIn("<b>", formatted)
+
+        # Code block without language
+        plain_code = "```\nplain code\n```"
+        formatted_plain = discord_markdown_to_telegram_html(plain_code)
+        self.assertIn("<pre><code>", formatted_plain)
 
     def test_blockquotes(self):
         # Blockquote with space
@@ -178,15 +183,61 @@ class TestFormatter(unittest.TestCase):
         self.assertIn("<b>Status</b>\nActive", result)
         self.assertIn("<i>Page 1 of 1</i>", result)
 
-    def test_format_announcement_skips_link_preview_embed(self):
+    def test_format_announcement_skips_link_and_gifv_embeds(self):
         from unittest.mock import MagicMock
 
-        embed = MagicMock()
-        embed.type = "link"
-        embed.title = "Discord Preview Card"
+        embed_link = MagicMock()
+        embed_link.type = "link"
+        embed_link.title = "Discord Preview Card"
 
-        result = format_announcement("Content with link", embeds=[embed])
+        embed_gifv = MagicMock()
+        embed_gifv.type = "gifv"
+        embed_gifv.title = "Tenor GIF Title"
+
+        result = format_announcement("Content with link", embeds=[embed_link, embed_gifv])
         self.assertNotIn("Discord Preview Card", result)
+        self.assertNotIn("Tenor GIF Title", result)
+
+    def test_kitchen_sink_markdown(self):
+        raw_kitchen_sink = (
+            "# 🎮 Weekly Club Night & Dev Workshop!\n"
+            "## Event Overview & Registration\n"
+            "### Hosted by the Club Organizers\n\n"
+            "Here is the setup command to run beforehand:\n"
+            "`git clone https://github.com/your-org/demo.git && cd demo`\n\n"
+            "```python\n"
+            "def check_admission(score: int) -> bool:\n"
+            "    return score >= 10 and (score & 1) == 0\n"
+            "```\n\n"
+            "> **Organizer Notice:**\n"
+            "> Please arrive __15 minutes before the start__!\n"
+            "> ~~Old Room: 101~~ ➔ **New Room: 204**\n\n"
+            "Important: ||keycode 4829||\n"
+            "-# Organized with love"
+        )
+        html_out = discord_markdown_to_telegram_html(raw_kitchen_sink)
+        self.assertNotIn("PLACEHOLDER", html_out)
+        self.assertNotIn("___CODE_BLOCK", html_out)
+        self.assertIn("<code>git clone", html_out)
+        self.assertIn('<pre><code class="language-python">', html_out)
+        self.assertIn("<blockquote><b>Organizer Notice:</b>", html_out)
+        self.assertIn("<u>15 minutes before the start</u>", html_out)
+        self.assertIn("<tg-spoiler>keycode 4829</tg-spoiler>", html_out)
+        self.assertIn("<i>Organized with love</i>", html_out)
+
+    def test_resolve_mentions_with_message_object(self):
+        from unittest.mock import MagicMock
+
+        mock_msg = MagicMock()
+        user1 = MagicMock(id=148050753175552000, display_name="p1ker1")
+        user2 = MagicMock(id=510789298321096704, display_name="TeXit")
+        mock_msg.mentions = [user1, user2]
+        mock_msg.role_mentions = []
+        mock_msg.channel_mentions = []
+
+        text = "Congrats to 1. <@148050753175552000> and 2. <@510789298321096704>!"
+        resolved = resolve_mentions(text, message=mock_msg)
+        self.assertEqual(resolved, "Congrats to 1. @p1ker1 and 2. @TeXit!")
 
 
 if __name__ == "__main__":

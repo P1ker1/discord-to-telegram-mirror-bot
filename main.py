@@ -3,7 +3,7 @@ import logging
 import signal
 import sys
 
-from src.config import config
+from src.core.config import config
 from src.discord_bot import MirrorBot
 
 # Setup logging

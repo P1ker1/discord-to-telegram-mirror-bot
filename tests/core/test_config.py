@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from src.config import Config, DAY_NAMES
+from src.core.config import Config, DAY_NAMES
 
 
 class TestConfig(unittest.TestCase):

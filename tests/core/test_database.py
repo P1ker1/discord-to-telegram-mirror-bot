@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.database import Database
+from src.core.database import Database
 
 class TestDatabase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -25,7 +25,8 @@ class TestDatabase(unittest.IsolatedAsyncioTestCase):
             discord_msg_id=discord_id,
             telegram_chat_id=telegram_chat,
             telegram_msg_ids=telegram_msg_ids,
-            has_media=True
+            has_media=True,
+            followup_message_id=102
         )
 
         mapping = await self.db.get_mapping(discord_id)
@@ -34,6 +35,7 @@ class TestDatabase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mapping["telegram_chat_id"], telegram_chat)
         self.assertEqual(mapping["telegram_message_ids"], telegram_msg_ids)
         self.assertTrue(mapping["has_media"])
+        self.assertEqual(mapping["followup_message_id"], 102)
 
     async def test_delete_mapping(self):
         discord_id = 1122334455

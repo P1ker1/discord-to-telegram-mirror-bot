@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 import aiosqlite
 
-from src.config import config
+from src.core.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,16 @@ class Database:
                     telegram_chat_id TEXT NOT NULL,
                     telegram_message_ids TEXT NOT NULL,
                     has_media INTEGER NOT NULL DEFAULT 0,
+                    followup_message_id INTEGER DEFAULT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            # Migration: ensure followup_message_id column exists if table was created in an earlier version
+            try:
+                await db.execute("ALTER TABLE message_mappings ADD COLUMN followup_message_id INTEGER DEFAULT NULL;")
+            except Exception:
+                pass
+
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_mappings_discord_id 
                 ON message_mappings(discord_message_id);
@@ -62,20 +69,27 @@ class Database:
         discord_msg_id: int,
         telegram_chat_id: str,
         telegram_msg_ids: list[int],
-        has_media: bool = False
+        has_media: bool = False,
+        followup_message_id: Optional[int] = None
     ):
         """Save a new mapping between Discord message ID and Telegram message IDs."""
         async with self._connect() as db:
             await db.execute(
                 """
                 INSERT OR REPLACE INTO message_mappings 
-                (discord_message_id, telegram_chat_id, telegram_message_ids, has_media, created_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                (discord_message_id, telegram_chat_id, telegram_message_ids, has_media, followup_message_id, created_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
-                (discord_msg_id, str(telegram_chat_id), json.dumps(telegram_msg_ids), 1 if has_media else 0)
+                (
+                    discord_msg_id,
+                    str(telegram_chat_id),
+                    json.dumps(telegram_msg_ids),
+                    1 if has_media else 0,
+                    followup_message_id
+                )
             )
             await db.commit()
-        logger.debug(f"Saved mapping: Discord {discord_msg_id} -> Telegram {telegram_msg_ids}")
+        logger.debug(f"Saved mapping: Discord {discord_msg_id} -> Telegram {telegram_msg_ids} (followup: {followup_message_id})")
 
     async def get_mapping(self, discord_msg_id: int) -> Optional[dict]:
         """Fetch Telegram message IDs and info mapped to a Discord message ID."""
@@ -88,11 +102,13 @@ class Database:
                 row = await cursor.fetchone()
                 if not row:
                     return None
+                followup_id = row["followup_message_id"] if "followup_message_id" in row.keys() else None
                 return {
                     "discord_message_id": row["discord_message_id"],
                     "telegram_chat_id": row["telegram_chat_id"],
                     "telegram_message_ids": json.loads(row["telegram_message_ids"]),
                     "has_media": bool(row["has_media"]),
+                    "followup_message_id": followup_id,
                     "created_at": row["created_at"],
                 }
 
@@ -107,11 +123,13 @@ class Database:
                 row = await cursor.fetchone()
                 if not row:
                     return None
+                followup_id = row["followup_message_id"] if "followup_message_id" in row.keys() else None
                 mapping = {
                     "discord_message_id": row["discord_message_id"],
                     "telegram_chat_id": row["telegram_chat_id"],
                     "telegram_message_ids": json.loads(row["telegram_message_ids"]),
                     "has_media": bool(row["has_media"]),
+                    "followup_message_id": followup_id,
                     "created_at": row["created_at"],
                 }
 
@@ -140,11 +158,13 @@ class Database:
             ) as cursor:
                 rows = await cursor.fetchall()
                 for row in rows:
+                    followup_id = row["followup_message_id"] if "followup_message_id" in row.keys() else None
                     deleted.append({
                         "discord_message_id": row["discord_message_id"],
                         "telegram_chat_id": row["telegram_chat_id"],
                         "telegram_message_ids": json.loads(row["telegram_message_ids"]),
                         "has_media": bool(row["has_media"]),
+                        "followup_message_id": followup_id,
                         "created_at": row["created_at"],
                     })
 

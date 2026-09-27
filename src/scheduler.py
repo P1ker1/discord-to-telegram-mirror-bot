@@ -6,8 +6,8 @@ from typing import Optional
 import discord
 from discord.ext import tasks
 
-from src.config import config
-from src.database import db
+from src.core.config import config
+from src.core.database import db
 from src.formatter import (
     format_upcoming_events_telegram,
     format_upcoming_events_discord

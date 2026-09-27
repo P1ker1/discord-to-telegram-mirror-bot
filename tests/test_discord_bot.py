@@ -186,6 +186,32 @@ class TestDiscordBot(unittest.IsolatedAsyncioTestCase):
         mock_db.delete_mappings_bulk.assert_awaited_once_with([88888, 88889])
         self.assertEqual(mock_tg.delete_channel_post.await_count, 2)
 
+    def test_extract_animation_discord_cdn_link(self):
+        msg = MagicMock(spec=discord.Message)
+        msg.attachments = []
+        msg.embeds = []
+        msg.content = "Look at this: https://cdn.discordapp.com/attachments/1475884456287015065/1544537751456587836/og_leo.gif"
+
+        anim_url, cleaned = self.bot._extract_animation(msg)
+        self.assertEqual(anim_url, "https://cdn.discordapp.com/attachments/1475884456287015065/1544537751456587836/og_leo.gif")
+        self.assertEqual(cleaned, "Look at this:")
+
+    def test_extract_animation_discord_embed(self):
+        msg = MagicMock(spec=discord.Message)
+        msg.attachments = []
+        embed = MagicMock()
+        embed.type = "image"
+        embed.video = None
+        embed.image.url = "https://media.discordapp.net/attachments/1475884456287015065/1544537751456587836/og_leo.gif?ex=66f64243"
+        embed.thumbnail = None
+        embed.url = None
+        msg.embeds = [embed]
+        msg.content = "https://cdn.discordapp.com/attachments/1475884456287015065/1544537751456587836/og_leo.gif"
+
+        anim_url, cleaned = self.bot._extract_animation(msg)
+        self.assertIn("og_leo.gif", anim_url)
+        self.assertEqual(cleaned, "")
+
 
 if __name__ == "__main__":
     unittest.main()

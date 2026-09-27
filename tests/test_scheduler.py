@@ -45,7 +45,7 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
 
     async def test_post_weekly_events_digest_destinations(self):
         from unittest.mock import patch
-        from src.config import config
+        from src.core.config import config
 
         service = Scheduler()
         mock_bot = MagicMock()
@@ -91,8 +91,8 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
     async def test_weekly_scheduler_grace_window(self):
         """Tests on-schedule dispatch, skip-when-handled, and expired grace window handling."""
         from unittest.mock import patch
-        from src.config import config
-        from src.database import db
+        from src.core.config import config
+        from src.core.database import db
 
         service = Scheduler()
         service.post_weekly_events_digest = AsyncMock()
