@@ -130,3 +130,27 @@ def convert_discord_headers(text: str) -> str:
         converted_lines.append(line)
 
     return "\n".join(converted_lines)
+
+def format_upcoming_events_discord(events: list) -> str:
+    """Formats a list of Discord ScheduledEvents into clean Discord markdown."""
+    if not events:
+        return "# 📅 Upcoming Events (Next 7 Days)\n\n*No upcoming events scheduled for the next 7 days.*"
+    lines = ["# 📅 Upcoming Events (Next 7 Days)", ""]
+    for ev in events:
+        lines.append(f"### 🔹 {ev.name}")
+        if ev.start_time:
+            unix_ts = int(ev.start_time.timestamp())
+            lines.append(f"⏰ <t:{unix_ts}:F> (<t:{unix_ts}:R>)")
+        else:
+            lines.append("⏰ *TBD*")
+        location = getattr(ev, "location", None)
+        channel = getattr(ev, "channel", None)
+        if location:
+            lines.append(f"📍 {location}")
+        elif channel:
+            lines.append(f"📍 #{channel.name}")
+        if getattr(ev, "description", None):
+            lines.append(ev.description.strip())
+        lines.append("")
+    return "\n".join(lines).strip()
+

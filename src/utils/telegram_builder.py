@@ -1,11 +1,13 @@
 import re
-from typing import Optional
+from typing import Optional, Any
 from zoneinfo import ZoneInfo
-import discord
 
 from src.core.config import config
 from src.utils.text_utils import escape_html, _close_unclosed_tags
-from src.utils.discord_parser import convert_discord_headers, resolve_mentions
+from src.utils.discord_parser import (
+    convert_discord_headers,
+    resolve_mentions,
+)
 
 def discord_markdown_to_telegram_html(text: str) -> str:
     """
@@ -85,7 +87,7 @@ def discord_markdown_to_telegram_html(text: str) -> str:
 
     return text
 
-def format_embed(embed: discord.Embed) -> str:
+def format_embed(embed: Any) -> str:
     parts = []
     if embed.author and embed.author.name:
         parts.append(f"<b>{escape_html(embed.author.name)}</b>")
@@ -109,14 +111,14 @@ def format_embed(embed: discord.Embed) -> str:
 
 def format_announcement(
     content: str,
-    embeds: Optional[list[discord.Embed]] = None,
-    guild: Optional[discord.Guild] = None,
+    embeds: Optional[list[Any]] = None,
+    guild: Optional[Any] = None,
     author_name: Optional[str] = None,
     show_author: bool = False,
     header: Optional[str] = None,
     max_length: int = 4096,
     tz: Optional[ZoneInfo] = None,
-    message: Optional[discord.Message] = None,
+    message: Optional[Any] = None,
     user_map: Optional[dict[int, str]] = None,
     role_map: Optional[dict[int, str]] = None,
     channel_map: Optional[dict[int, str]] = None
@@ -147,7 +149,7 @@ def format_announcement(
     return result
 
 def format_upcoming_events_telegram(
-    events: list[discord.ScheduledEvent],
+    events: list[Any],
     header: Optional[str] = None,
     tz: Optional[ZoneInfo] = None
 ) -> str:
@@ -183,24 +185,9 @@ def format_upcoming_events_telegram(
     sections.append("\n\n".join(event_blocks))
     return "\n\n".join(sections)
 
-def format_upcoming_events_discord(events: list[discord.ScheduledEvent]) -> str:
-    if not events:
-        return "# 📅 Upcoming Events (Next 7 Days)\n\n*No upcoming events scheduled for the next 7 days.*"
-    lines = ["# 📅 Upcoming Events (Next 7 Days)", ""]
-    for ev in events:
-        lines.append(f"### 🔹 {ev.name}")
-        if ev.start_time:
-            unix_ts = int(ev.start_time.timestamp())
-            lines.append(f"⏰ <t:{unix_ts}:F> (<t:{unix_ts}:R>)")
-        else:
-            lines.append("⏰ *TBD*")
-        location = getattr(ev, "location", None)
-        channel = getattr(ev, "channel", None)
-        if location:
-            lines.append(f"📍 {location}")
-        elif channel:
-            lines.append(f"📍 #{channel.name}")
-        if getattr(ev, "description", None):
-            lines.append(ev.description.strip())
-        lines.append("")
-    return "\n".join(lines).strip()
+__all__ = [
+    "discord_markdown_to_telegram_html",
+    "format_embed",
+    "format_announcement",
+    "format_upcoming_events_telegram",
+]

@@ -23,7 +23,7 @@ def _close_unclosed_tags(text: str) -> str:
         text = text[:last_open]
 
     tag_pattern = re.compile(r"<\s*(/)?\s*([a-zA-Z0-9-]+)(?:\s+[^>]*)?>")
-    stack = []
+    stack: list[str] = []
     for m in tag_pattern.finditer(text):
         is_closing, tag_name = m.group(1), m.group(2).lower()
         if is_closing:

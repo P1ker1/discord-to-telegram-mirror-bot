@@ -103,7 +103,8 @@ class TestFormatter(unittest.TestCase):
     def test_upcoming_events_formatting(self):
         from unittest.mock import MagicMock
         from datetime import datetime, timezone
-        from src.utils.telegram_builder import format_upcoming_events_telegram, format_upcoming_events_discord
+        from src.utils.telegram_builder import format_upcoming_events_telegram
+        from src.utils.discord_parser import format_upcoming_events_discord
 
         mock_event = MagicMock()
         mock_event.name = "Weekly Game Night"

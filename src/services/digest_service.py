@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timezone, timedelta
 import logging
 from typing import Optional
@@ -8,10 +7,8 @@ from discord.ext import tasks
 
 from src.core.config import config
 from src.core.database import db
-from src.utils.telegram_builder import (
-    format_upcoming_events_telegram,
-    format_upcoming_events_discord
-)
+from src.utils.telegram_builder import format_upcoming_events_telegram
+from src.utils.discord_parser import format_upcoming_events_discord
 
 
 logger = logging.getLogger(__name__)
