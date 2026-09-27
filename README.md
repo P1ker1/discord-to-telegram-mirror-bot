@@ -211,7 +211,7 @@ Copy `.env.example` to `.env` and configure the settings:
 ### Automated Testing (Continuous Integration)
 
 The repository includes an automated testing workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) that runs on every push and pull request:
-- **Unit Tests**: Executes the complete 49-test suite across all modules on Python 3.12.
+- **Unit Tests**: Executes the complete 58-test suite across all modules on Python 3.12.
 - **Docker Build Check**: Verifies that the container image builds cleanly without errors.
 - **Zero Secrets Required**: Runs entirely on standard GitHub Actions runners with no external infrastructure or secrets needed.
 
@@ -236,7 +236,8 @@ discord-announcement-bot/
 ├── src/
 │   ├── core/
 │   │   ├── config.py           # Typed configuration loader & validator
-│   │   └── database.py         # SQLite Persistence: message correlation & metadata table
+│   │   ├── database.py         # SQLite Persistence: message correlation & metadata table
+│   │   └── models.py           # Pure domain data models (MediaAttachment, Announcement)
 │   ├── utils/
 │   │   ├── text_utils.py       # Helper functions for markdown/HTML translation
 │   │   ├── discord_parser.py   # Discord content parsing and extraction
@@ -248,7 +249,7 @@ discord-announcement-bot/
 │       ├── discord_client.py   # Discord API client and Gateway listener
 │       └── telegram_client.py  # Telegram API client for media and post management
 └── tests/
-    ├── core/                   # Unit tests for core configuration and database
+    ├── core/                   # Unit tests for configuration, database, and domain models
     ├── utils/                  # Unit tests for formatting and parsing utilities
     ├── services/               # Unit tests for business logic and scheduling
     └── clients/                # Unit tests for Discord and Telegram clients
@@ -325,7 +326,8 @@ A key architectural advantage of this bot is the alignment between Discord and T
 | Feature / Goal | Where to go | What to do |
 | :--- | :--- | :--- |
 | **Change how text or emojis look on Telegram** | `src/utils/` | Add or update tag replacement rules in `text_utils.py` and formatting in `telegram_builder.py`. |
-| **Change the Weekly Events digest layout** | `src/utils/telegram_builder.py` | Customize `format_upcoming_events_telegram` or `format_upcoming_events_discord`. |
+| **Change the Weekly Events digest layout** | `src/utils/` | Customize `format_upcoming_events_telegram` in `telegram_builder.py` or `format_upcoming_events_discord` in `discord_parser.py`. |
+| **Add a new domain field or attachment property** | `src/core/models.py` | Add typed fields to `MediaAttachment` or `Announcement`. |
 | **Listen to a new Discord event** | `src/clients/discord_client.py` | Add a Gateway listener (e.g. `on_reaction_add` or `on_thread_create`). |
 | **Add a new scheduled recurring job** | `src/services/digest_service.py` | Add a new `@tasks.loop` method and manage its lifecycle in `start()` and `stop()`. |
 | **Support new Telegram API features** | `src/clients/telegram_client.py` | Add methods using `python-telegram-bot` (e.g. pinning, forum topics, polls). |
@@ -338,9 +340,11 @@ A key architectural advantage of this bot is the alignment between Discord and T
 ### Core Design Rules
 
 1. **Formatters must stay pure**: Functions in `src/utils/` should only transform inputs into strings. Never make network requests (`aiohttp`, Discord API, Telegram API) or database queries inside the utilities.
-2. **Handle Telegram fallback gracefully**: Telegram's HTML parser is strict. Wrap external API operations in try-catch blocks with safe plain-text fallback (`re_strip_tags`).
-3. **Use raw gateway events**: Always listen to `on_raw_message_edit` and `on_raw_message_delete` in `src/clients/discord_client.py` rather than cached events so that edits/deletions work even after the bot restarts.
-4. **Maintain test signal**: Keep tests high-value and focused on contracts and regression prevention (avoiding heavy mock boilerplate for trivial assignments).
+2. **Keep adapters decoupled**: `TelegramClient` operates strictly on domain models (`MediaAttachment`) and standard library types. It never imports `discord` or relies on Discord SDK types.
+3. **Safe deletion ordering**: Delete from the external channel (Telegram) *before* deleting mapping records in SQLite. If Telegram deletion fails, the mapping is preserved so the message can be cleaned up later without leaving ghost messages.
+4. **Handle Telegram fallback gracefully**: Telegram's HTML parser is strict. Wrap external API operations in try-catch blocks with safe plain-text fallback (`re_strip_tags`).
+5. **Use raw gateway events**: Always listen to `on_raw_message_edit` and `on_raw_message_delete` in `src/clients/discord_client.py` rather than cached events so that edits/deletions work even after the bot restarts.
+6. **Maintain test signal**: Keep tests high-value and focused on contracts and regression prevention (avoiding heavy mock boilerplate for trivial assignments).
 
 ---
 
