@@ -3,15 +3,15 @@ import html
 import io
 import logging
 import re
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 import aiohttp
-import discord
 from telegram import Bot, InputMediaPhoto, InputMediaVideo, InputMediaDocument
 from telegram.constants import ParseMode
 from telegram.error import TelegramError, BadRequest, RetryAfter
 
 from src.core.config import config
+from src.core.models import MediaAttachment
 
 logger = logging.getLogger(__name__)
 
@@ -76,33 +76,38 @@ class TelegramClient:
             logger.error(f"Error downloading media from {url}: {e}")
         return None
 
-    def _is_animation(self, attachment: discord.Attachment) -> bool:
-        if attachment.content_type == "image/gif":
+    def _is_animation(self, attachment: Union[MediaAttachment, Any]) -> bool:
+        if getattr(attachment, "is_animation", False):
             return True
-        filename = (attachment.filename or "").lower()
+        if getattr(attachment, "content_type", None) == "image/gif":
+            return True
+        filename = (getattr(attachment, "filename", None) or "").lower()
         return filename.endswith(".gif")
 
-    def _is_image(self, attachment: discord.Attachment) -> bool:
+    def _is_image(self, attachment: Union[MediaAttachment, Any]) -> bool:
         if self._is_animation(attachment):
             return False
-        if attachment.content_type and attachment.content_type.startswith("image/"):
+        content_type = getattr(attachment, "content_type", None)
+        if content_type and content_type.startswith("image/"):
             return True
-        filename = (attachment.filename or "").lower()
+        filename = (getattr(attachment, "filename", None) or "").lower()
         return filename.endswith((".png", ".jpg", ".jpeg", ".webp"))
 
-    def _is_video(self, attachment: discord.Attachment) -> bool:
-        if attachment.content_type and attachment.content_type.startswith("video/"):
+    def _is_video(self, attachment: Union[MediaAttachment, Any]) -> bool:
+        content_type = getattr(attachment, "content_type", None)
+        if content_type and content_type.startswith("video/"):
             return True
-        filename = (attachment.filename or "").lower()
+        filename = (getattr(attachment, "filename", None) or "").lower()
         return filename.endswith((".mp4", ".mov", ".mkv", ".webm"))
 
     async def _send_single_attachment(
         self,
         chat_id: Union[str, int],
-        attachment: discord.Attachment
+        attachment: Union[MediaAttachment, Any]
     ) -> int:
         """Helper to upload and send a single photo, video, animation (GIF), or generic document attachment without caption."""
         file_bytes = await self.download_file_bytes(attachment.url)
+        file_data: Union[io.BytesIO, str]
         if file_bytes:
             file_data = io.BytesIO(file_bytes)
             file_data.name = attachment.filename
@@ -143,6 +148,7 @@ class TelegramClient:
         """Helper to send an animation from a direct URL (e.g. Tenor/Giphy/Discord GIF) without caption."""
         file_bytes = await self.download_file_bytes(url)
         ext = ".mp4" if ".mp4" in url.lower() else ".gif"
+        file_data: Union[io.BytesIO, str]
         if file_bytes:
             file_data = io.BytesIO(file_bytes)
             file_data.name = f"animation{ext}"
@@ -161,7 +167,7 @@ class TelegramClient:
         self,
         chat_id: Union[str, int],
         formatted_text: str,
-        attachments: list[discord.Attachment],
+        attachments: list[Union[MediaAttachment, Any]],
         disable_web_page_preview: bool = False,
         animation_url: Optional[str] = None
     ) -> SendPostResult:
@@ -191,9 +197,10 @@ class TelegramClient:
                 has_media = True
                 for chunk_start in range(0, len(attachments), 10):
                     chunk = attachments[chunk_start:chunk_start + 10]
-                    media_group = []
+                    media_group: list[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument]] = []
                     for att in chunk:
                         file_bytes = await self.download_file_bytes(att.url)
+                        file_data: Union[io.BytesIO, str]
                         if file_bytes:
                             file_data = io.BytesIO(file_bytes)
                             file_data.name = att.filename
@@ -231,9 +238,13 @@ class TelegramClient:
                 text_msg_id = fallback_msg.message_id
             except Exception as fallback_err:
                 logger.error(f"Fallback plain-text dispatch failed: {fallback_err}")
+                setattr(fallback_err, "partial_sent_msg_ids", sent_msg_ids)
+                setattr(fallback_err, "partial_has_media", has_media)
                 raise
         except TelegramError as e:
             logger.error(f"Telegram error sending announcement: {e}")
+            setattr(e, "partial_sent_msg_ids", sent_msg_ids)
+            setattr(e, "partial_has_media", has_media)
             raise
 
         return SendPostResult(sent_msg_ids, has_media, text_msg_id)
@@ -306,7 +317,7 @@ class TelegramClient:
                     updated_msg_ids.append(target_text_id)
                     logger.info(f"Appended new text message {target_text_id} to media post")
                     return EditPostResult(True, updated_msg_ids, target_text_id)
-                except BadRequest as e:
+                except BadRequest:
                     plain = re_strip_tags(formatted_text)
                     new_msg = await bot.send_message(chat_id=chat_id, text=plain)
                     target_text_id = new_msg.message_id
@@ -347,8 +358,9 @@ class TelegramClient:
                 if len(message_ids) > 1 and i < len(message_ids) - 1:
                     await asyncio.sleep(0.05)
             except RetryAfter as e:
-                logger.warning(f"Hit Telegram rate limit during delete, retrying after {e.retry_after}s")
-                await asyncio.sleep(e.retry_after)
+                retry_delay = e.retry_after.total_seconds() if hasattr(e.retry_after, "total_seconds") else float(e.retry_after)
+                logger.warning(f"Hit Telegram rate limit during delete, retrying after {retry_delay}s")
+                await asyncio.sleep(retry_delay)
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=msg_id)
                     logger.info(f"Successfully deleted Telegram message {msg_id} on retry")
@@ -366,5 +378,3 @@ class TelegramClient:
                 success = False
 
         return success
-
-telegram_bot = TelegramClient()

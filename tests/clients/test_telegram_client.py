@@ -1,9 +1,10 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from telegram.error import BadRequest
 from telegram.constants import ParseMode
 
 from src.clients.telegram_client import TelegramClient, re_strip_tags
+from src.core.models import MediaAttachment
 
 
 class TestTelegramClient(unittest.IsolatedAsyncioTestCase):
@@ -29,10 +30,10 @@ class TestTelegramClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["filename"], "animation.gif")
 
     def test_media_detection(self):
-        att_gif = MagicMock(content_type="image/gif", filename="dance.gif")
-        att_png = MagicMock(content_type="image/png", filename="image.png")
-        att_mp4 = MagicMock(content_type="video/mp4", filename="clip.mp4")
-        att_doc = MagicMock(content_type="application/pdf", filename="document.pdf")
+        att_gif = MediaAttachment(url="http://x/dance.gif", content_type="image/gif", filename="dance.gif", is_animation=True)
+        att_png = MediaAttachment(url="http://x/image.png", content_type="image/png", filename="image.png")
+        att_mp4 = MediaAttachment(url="http://x/clip.mp4", content_type="video/mp4", filename="clip.mp4")
+        att_doc = MediaAttachment(url="http://x/doc.pdf", content_type="application/pdf", filename="document.pdf")
 
         # Animation
         self.assertTrue(self.bot_wrapper._is_animation(att_gif))
@@ -99,7 +100,7 @@ class TestTelegramClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.mock_bot.delete_message.await_count, 2)
 
     async def test_send_single_attachment_gif(self):
-        mock_att = MagicMock(content_type="image/gif", filename="funny.gif", url="https://cdn.discord.com/funny.gif")
+        mock_att = MediaAttachment(content_type="image/gif", filename="funny.gif", url="https://cdn.discord.com/funny.gif", is_animation=True)
         self.bot_wrapper.download_file_bytes = AsyncMock(return_value=b"GIF89a...")
         self.mock_bot.send_animation.return_value = MagicMock(message_id=99)
         self.mock_bot.send_message.return_value = MagicMock(message_id=100)
@@ -180,5 +181,24 @@ class TestTelegramClient(unittest.IsolatedAsyncioTestCase):
         )
 
 
+    async def test_send_channel_post_partial_failure_preserves_media_ids(self):
+        from telegram.error import TelegramError
+        mock_att = MediaAttachment(content_type="image/png", filename="pic.png", url="https://cdn.discord.com/pic.png")
+        self.bot_wrapper.download_file_bytes = AsyncMock(return_value=b"PNG...")
+        self.mock_bot.send_photo.return_value = MagicMock(message_id=55)
+        self.mock_bot.send_message.side_effect = TelegramError("Network failure on text send")
+
+        with self.assertRaises(TelegramError) as ctx:
+            await self.bot_wrapper.send_channel_post(
+                chat_id="-10012345",
+                formatted_text="This text fails",
+                attachments=[mock_att]
+            )
+
+        self.assertEqual(getattr(ctx.exception, "partial_sent_msg_ids", None), [55])
+        self.assertTrue(getattr(ctx.exception, "partial_has_media", False))
+
+
 if __name__ == "__main__":
     unittest.main()
+
