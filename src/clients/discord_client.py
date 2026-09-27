@@ -7,7 +7,7 @@ from discord import RawMessageUpdateEvent, RawMessageDeleteEvent, RawBulkMessage
 
 from src.core.config import config
 from src.core.database import db
-from src.scheduler import scheduler
+from src.services.digest_service import digest_service
 
 logger = logging.getLogger("DiscordClient")
 
@@ -33,8 +33,8 @@ class DiscordClient(discord.Client):
         """Pre-connection hook: initialize SQLite database and start background tasks."""
         await db.init_db()
 
-        scheduler.set_bot(self)
-        scheduler.start()
+        digest_service.set_bot(self)
+        digest_service.start()
 
     async def on_ready(self):
         """Triggered when the bot establishes connection with Discord."""
@@ -66,7 +66,7 @@ class DiscordClient(discord.Client):
         """Handles new messages posted in the monitored channel."""
         if message.content.strip().lower() in ("!events", "!post-events"):
             logger.info(f"Manual weekly events digest triggered by {message.author}")
-            await scheduler.post_weekly_events_digest()
+            await digest_service.post_weekly_events_digest()
             return
 
         if self.mirror_service:
@@ -88,5 +88,5 @@ class DiscordClient(discord.Client):
             await self.mirror_service.process_bulk_message_delete(payload)
 
     async def close(self):
-        scheduler.stop()
+        digest_service.stop()
         await super().close()

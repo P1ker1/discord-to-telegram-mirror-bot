@@ -8,7 +8,7 @@ from src.core.database import db
 from src.clients.discord_client import DiscordClient
 from src.clients.telegram_client import TelegramClient
 from src.services.mirror_service import MirrorService
-from src.scheduler import scheduler
+from src.services.digest_service import digest_service
 
 # Setup logging
 logging.basicConfig(
@@ -30,7 +30,7 @@ def main():
     mirror_service = MirrorService(discord_client, telegram_client, db)
     
     discord_client.set_mirror_service(mirror_service)
-    scheduler.set_telegram_client(telegram_client)
+    digest_service.set_telegram_client(telegram_client)
 
     def handle_shutdown(signum, frame):
         logger.info("Shutdown signal received. Shutting down gracefully...")

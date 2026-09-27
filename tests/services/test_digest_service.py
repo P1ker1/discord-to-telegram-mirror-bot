@@ -3,12 +3,12 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone, timedelta
 import discord
 
-from src.scheduler import Scheduler
+from src.services.digest_service import DigestService
 from src.utils.telegram_builder import format_upcoming_events_telegram, format_upcoming_events_discord
 
-class TestScheduler(unittest.IsolatedAsyncioTestCase):
+class TestDigestService(unittest.IsolatedAsyncioTestCase):
     async def test_fetch_upcoming_events_filtering(self):
-        service = Scheduler()
+        service = DigestService()
 
         now = datetime.now(timezone.utc)
         mock_club = MagicMock()
@@ -47,7 +47,7 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         from src.core.config import config
 
-        service = Scheduler()
+        service = DigestService()
         mock_bot = MagicMock()
         mock_channel = MagicMock()
         mock_channel.send = AsyncMock()
@@ -74,7 +74,7 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
 
         # 2. Test both Discord and Telegram enabled (post_events_to_discord=True)
         with patch.object(config, "post_events_to_discord", True), \
-             patch("src.scheduler.db.save_mapping", new_callable=AsyncMock) as mock_save_mapping:
+             patch("src.services.digest_service.db.save_mapping", new_callable=AsyncMock) as mock_save_mapping:
             mock_tg_client.send_channel_post.return_value = ([999], False)
             mock_sent_discord = MagicMock()
             mock_sent_discord.id = 12345
@@ -97,13 +97,13 @@ class TestScheduler(unittest.IsolatedAsyncioTestCase):
         from src.core.config import config
         from src.core.database import db
 
-        service = Scheduler()
+        service = DigestService()
         service.post_weekly_events_digest = AsyncMock()
 
         # Fixed Monday 10:00 local time for deterministic test
         monday_scheduled = datetime(2026, 9, 28, 10, 0, 0, tzinfo=config.tz)
 
-        with patch("src.scheduler.datetime") as mock_dt, \
+        with patch("src.services.digest_service.datetime") as mock_dt, \
              patch.object(config, "weekly_events_day", 0), \
              patch.object(config, "weekly_events_time", "10:00"), \
              patch.object(config, "weekly_events_grace_period_hours", 8), \

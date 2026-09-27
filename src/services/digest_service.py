@@ -16,8 +16,8 @@ from src.utils.telegram_builder import (
 
 logger = logging.getLogger(__name__)
 
-class Scheduler:
-    """Centralized background task scheduler for recurring jobs."""
+class DigestService:
+    """Centralized background task DigestService for recurring jobs."""
 
     def __init__(self, bot: Optional[discord.Client] = None, telegram_client=None):
         self.bot = bot
@@ -46,7 +46,7 @@ class Scheduler:
     async def post_weekly_events_digest(self):
         """Fetches Discord Scheduled Events for the next 7 days and posts the digest."""
         if not self.bot:
-            logger.error("Scheduler: Cannot post weekly events, bot instance not set.")
+            logger.error("DigestService: Cannot post weekly events, bot instance not set.")
             return
 
         target_channel = self.bot.get_channel(config.discord_channel_id)
@@ -157,17 +157,17 @@ class Scheduler:
             await db.set_metadata("last_weekly_digest_week", week_key)
 
     def start(self):
-        """Starts the background scheduler if configured."""
+        """Starts the background DigestService if configured."""
         if config.enable_weekly_events and not self.weekly_events_scheduler.is_running():
             self.weekly_events_scheduler.start()
             logger.info(
-                f"Weekly events scheduler started (Target: {config.weekly_events_day_name}s "
+                f"Weekly events DigestService started (Target: {config.weekly_events_day_name}s "
                 f"at {config.weekly_events_time} {config.timezone})"
             )
 
     def stop(self):
-        """Stops the background scheduler."""
+        """Stops the background DigestService."""
         if self.weekly_events_scheduler.is_running():
             self.weekly_events_scheduler.cancel()
 
-scheduler = Scheduler()
+digest_service = DigestService()
