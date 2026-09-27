@@ -18,6 +18,7 @@ It operates strictly **one-way (Discord &rarr; Telegram)** and synchronizes new 
   - [Environment Configuration (.env Reference)](#environment-configuration-env-reference)
   - [Production Deployment with Docker Compose](#production-deployment-with-docker-compose)
   - [Managing & Updating the Bot on Debian](#managing--updating-the-bot-on-debian)
+  - [Automated Testing (Continuous Integration)](#automated-testing-continuous-integration)
 - [4. Developer & Architecture Guide](#4-developer--architecture-guide)
   - [File Structure](#file-structure)
   - [Message Lifecycle (Data Flow)](#message-lifecycle-data-flow)
@@ -207,6 +208,15 @@ Copy `.env.example` to `.env` and configure the settings:
 
 ---
 
+### Automated Testing (Continuous Integration)
+
+The repository includes an automated testing workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) that runs on every push and pull request:
+- **Unit Tests**: Executes the complete 35-test suite across all modules on Python 3.12.
+- **Docker Build Check**: Verifies that the container image builds cleanly without errors.
+- **Zero Secrets Required**: Runs entirely on standard GitHub Actions runners with no external infrastructure or secrets needed.
+
+---
+
 ## 4. Developer & Architecture Guide
 
 The project implements an **Asynchronous, Event-Driven Unidirectional Bridge (Gateway Pattern)** between Discord and Telegram.
@@ -215,10 +225,14 @@ The project implements an **Asynchronous, Event-Driven Unidirectional Bridge (Ga
 
 ```text
 discord-announcement-bot/
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # GitHub Actions workflow: automated testing & Docker build check
 ├── main.py                     # Application entry point, config assertions & signal handling
 ├── Dockerfile                  # Slim Python container definition
 ├── docker-compose.yml          # Container configuration with host volume mounts
 ├── requirements.txt            # Python dependencies (discord.py, python-telegram-bot, aiosqlite)
+├── LICENSE                     # MIT License
 ├── src/
 │   ├── discord_bot.py          # Discord Client: listens for message, edit, and deletion Gateway events
 │   ├── telegram_bot.py         # Telegram Service: handles media albums, sending, editing, and fallbacks
